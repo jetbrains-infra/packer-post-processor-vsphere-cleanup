@@ -7,11 +7,12 @@ Packer plugin for cleanup templates in vsphere
   ...
   "post-processors":[
     {
+      "type": "vsphere-cleanup",
       "vcenter_server": "<required, vcenter server hostname>",
       "vcenter_dc": "<required, datacenter name>",
       "username": "<required, vcenter user login>",
       "password": "<required, vcenter user password>",
-      "insecure_connection": "<default to true>",
+      "insecure_connection": "<true by default>",
       "image_name_regex": "ubuntu-18.04-image-([0-9]+)",
       "keep_images": "<2 by default, keep 2 last images>",
       "dry_run": "<false by default>"
