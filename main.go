@@ -11,13 +11,16 @@ import (
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
+	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/soap"
 	"log"
 	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -98,12 +101,32 @@ func (c *Cleaner) Configure(raws ...interface{}) error {
 }
 
 func NewClient(ctx context.Context, host string, username string, password string, insecureFlag bool) (*govmomi.Client, error) {
-	u, err := url.Parse(fmt.Sprintf("https://%s%s", host, vim25.Path))
+	urlString := fmt.Sprintf("https://%s%s", host, vim25.Path)
+	u, err := url.Parse(urlString)
+	if err != nil {
+		return nil, packer.MultiErrorAppend(fmt.Errorf("unable to parse url %s, %s", urlString, err))
+	}
+	credentials := url.UserPassword(username, password)
+	u.User = credentials
+
+	soapClient := soap.NewClient(u, insecureFlag)
+	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
 		return nil, err
 	}
-	u.User = url.UserPassword(username, password)
-	return govmomi.NewClient(ctx, u, insecureFlag)
+
+	vimClient.RoundTripper = session.KeepAlive(vimClient.RoundTripper, 1*time.Minute)
+
+	client := &govmomi.Client{
+		Client:         vimClient,
+		SessionManager: session.NewManager(vimClient),
+	}
+
+	err = client.SessionManager.Login(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 func (c *Cleaner) Init() error {
