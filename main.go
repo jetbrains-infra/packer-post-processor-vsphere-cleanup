@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/hcl/v2/hcldec"
 	"github.com/hashicorp/packer/common"
 	"github.com/hashicorp/packer/helper/config"
 	"github.com/hashicorp/packer/packer"
@@ -152,7 +153,7 @@ func (c *Cleaner) Init() error {
 	return nil
 }
 
-func (c *Cleaner) PostProcess(ui packer.Ui, p packer.Artifact) (a packer.Artifact, keep bool, err error) {
+func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, p packer.Artifact) (a packer.Artifact, keep bool, forceOverride bool, err error) {
 	defer func() {
 		err := c.client.Logout(c.Ctx)
 		if err != nil {
@@ -181,7 +182,7 @@ func (c *Cleaner) PostProcess(ui packer.Ui, p packer.Artifact) (a packer.Artifac
 
 	keepImages, err := strconv.Atoi(c.config.KeepImages)
 	if err != nil {
-		return a, true, packer.MultiErrorAppend(
+		return a, true, false, packer.MultiErrorAppend(
 			fmt.Errorf("unable to use %s as KeepImages", c.config.KeepImages), err)
 	}
 
@@ -201,7 +202,11 @@ func (c *Cleaner) PostProcess(ui packer.Ui, p packer.Artifact) (a packer.Artifac
 	if !parseBool(c.config.DryRun, false) {
 		c.deleteTemplate(deleted)
 	}
-	return nil, false, nil
+	return nil, false, false, nil
+}
+
+func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
+	return nil
 }
 
 func (c *Cleaner) deleteTemplate(list templateList) {
