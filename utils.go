@@ -47,13 +47,18 @@ func (s byVersion) Less(i, j int) bool {
 }
 
 func getTemplate(re *regexp.Regexp, machine VM) *template {
-	ver := re.FindStringSubmatch(machine.Name())
+	name := machine.Name()
+	ver := re.FindStringSubmatch(name)
 	if len(ver) <= 1 {
+		return nil
+	}
+	if len(ver[0]) != len(name) {
+		// Not full match
 		return nil
 	}
 	t := &template{
 		ref:     machine,
-		name:    machine.Name(),
+		name:    name,
 		version: 0,
 	}
 
