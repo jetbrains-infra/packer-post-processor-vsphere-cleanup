@@ -153,7 +153,7 @@ func (c *Cleaner) Init() error {
 	return nil
 }
 
-func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, p packer.Artifact) (a packer.Artifact, keep bool, forceOverride bool, err error) {
+func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer.Artifact) (a packer.Artifact, keep bool, forceOverride bool, err error) {
 	defer func() {
 		err := c.client.Logout(c.Ctx)
 		if err != nil {
@@ -163,6 +163,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, p packer.Artifa
 	c.ui = ui
 
 	var templates templateList
+	var newTemplate *template
 
 	re := regexp.MustCompile(c.config.ImageNameRegex)
 	c.ui.Message(fmt.Sprintf("Using regexp: %s", re.String()))
@@ -176,7 +177,11 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, p packer.Artifa
 	for _, t := range items {
 		temp = getTemplate(re, t)
 		if temp != nil {
-			templates = append(templates, temp)
+			if temp.name == artifact.Id() {
+				newTemplate = temp
+			} else {
+				templates = append(templates, temp)
+			}
 		}
 	}
 
@@ -194,6 +199,9 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, p packer.Artifa
 		kept = templates[len(templates)-keepImages:]
 	} else {
 		kept = templates
+	}
+	if newTemplate != nil {
+		kept = append(kept, newTemplate)
 	}
 
 	c.ui.Message(fmt.Sprintf("Next machines selected for deletion: %s", deleted.toString()))
