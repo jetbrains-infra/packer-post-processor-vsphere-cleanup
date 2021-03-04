@@ -20,7 +20,6 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/vmware/govmomi/vim25/types"
@@ -38,15 +37,17 @@ type VM interface {
 }
 
 type Config struct {
-	common.PackerConfig    `mapstructure:",squash"`
-	VsphereServer          string `mapstructure:"vcenter_server"`
-	VsphereDC              string `mapstructure:"vcenter_dc"`
-	VsphereUsername        string `mapstructure:"username"`
-	VspherePassword        string `mapstructure:"password"`
-	VsphereAllowSelfSigned string `mapstructure:"insecure_connection"`
-	ImageNameRegex         string `mapstructure:"image_name_regex"`
-	KeepImages             string `mapstructure:"keep_images"`
-	DryRun                 string `mapstructure:"dry_run"`
+	common.PackerConfig `mapstructure:",squash"`
+
+	VsphereServer          string         `mapstructure:"vcenter_server" required:"true"`
+	VsphereDC              string         `mapstructure:"vcenter_dc" required:"true"`
+	VsphereUsername        string         `mapstructure:"username" required:"true"`
+	VspherePassword        string         `mapstructure:"password" required:"true"`
+	VsphereAllowSelfSigned config.Trilean `mapstructure:"insecure_connection" required:"false"`
+
+	ImageNameRegex string `mapstructure:"image_name_regex" required:"true"`
+	KeepImages     int    `mapstructure:"keep_images" required:"false"`
+	DryRun         bool   `mapstructure:"dry_run" required:"false"`
 }
 
 type Cleaner struct {
@@ -79,17 +80,14 @@ func (c *Cleaner) Configure(raws ...interface{}) error {
 	if c.config.VsphereDC == "" {
 		errs = packer.MultiErrorAppend(errs, fmt.Errorf("%s: vsphere_dc is required", pluginString))
 	}
-	if c.config.VsphereAllowSelfSigned == "" {
-		c.config.VsphereAllowSelfSigned = "true"
+	if c.config.VsphereAllowSelfSigned == config.TriUnset {
+		c.config.VsphereAllowSelfSigned = config.TriTrue
 	}
 	if c.config.ImageNameRegex == "" {
 		errs = packer.MultiErrorAppend(errs, fmt.Errorf("%s: image_name_regex is required", pluginString))
 	}
-	if c.config.KeepImages == "" {
-		c.config.KeepImages = "2"
-	}
-	if c.config.DryRun == "" {
-		c.config.DryRun = "false"
+	if c.config.KeepImages == 0 {
+		c.config.KeepImages = 2
 	}
 
 	if len(errs.Errors) > 0 {
@@ -105,7 +103,7 @@ func NewClient(ctx context.Context, host string, username string, password strin
 	urlString := fmt.Sprintf("https://%s%s", host, vim25.Path)
 	u, err := url.Parse(urlString)
 	if err != nil {
-		return nil, packer.MultiErrorAppend(fmt.Errorf("unable to parse url %s, %s", urlString, err))
+		return nil, packer.MultiErrorAppend(fmt.Errorf("unable to parse url '%s'", urlString), err)
 	}
 	credentials := url.UserPassword(username, password)
 	u.User = credentials
@@ -134,19 +132,22 @@ func (c *Cleaner) Init() error {
 	log.Printf("Init")
 	var err error
 	c.client, err = NewClient(c.Ctx, c.config.VsphereServer, c.config.VsphereUsername, c.config.VspherePassword,
-		c.config.VsphereAllowSelfSigned == "true")
+		c.config.VsphereAllowSelfSigned.True())
 	if err != nil {
 		return packer.MultiErrorAppend(fmt.Errorf(
-			"%s: unable to create vsphere client with: vsphere_url='%s' vsphere_username='%s', vsphere_allow_selfsigned='%s'",
+			"%s: unable to create vsphere client with: vcenter_server='%s', username='%s', insecure_connection='%s'",
 			pluginString,
 			c.config.VsphereServer,
 			c.config.VsphereUsername,
-			c.config.VsphereAllowSelfSigned), err)
+			c.config.VsphereAllowSelfSigned.ToString()), err)
 	}
 	c.finder = find.NewFinder(c.client.Client, false)
 	datacenter, err := c.finder.DatacenterOrDefault(c.Ctx, c.config.VsphereDC)
 	if err != nil {
-		return err
+		return packer.MultiErrorAppend(fmt.Errorf(
+			"%s: unable to find vsphere datacenter '%s'",
+			pluginString,
+			c.config.VsphereDC), err)
 	}
 	c.finder.SetDatacenter(datacenter)
 	c.collector = property.DefaultCollector(c.client.Client)
@@ -162,15 +163,16 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 	}()
 	c.ui = ui
 
-	var templates templateList
+	var templates = make(templateList, 0)
 	var newTemplate *template
 
 	re := regexp.MustCompile(c.config.ImageNameRegex)
-	c.ui.Message(fmt.Sprintf("Using regexp: %s", re.String()))
+	c.ui.Message(fmt.Sprintf("Using image name regexp: %s", re.String()))
 
 	items, err := c.finder.VirtualMachineList(c.Ctx, "*")
 	if err != nil {
-		log.Fatal(err)
+		c.ui.Error(fmt.Sprintf("Unable to retrieve virtual machines: %s", err))
+		return nil, true, false, err
 	}
 
 	var temp *template
@@ -185,32 +187,28 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 		}
 	}
 
-	keepImages, err := strconv.Atoi(c.config.KeepImages)
-	if err != nil {
-		return a, true, false, packer.MultiErrorAppend(
-			fmt.Errorf("unable to use %s as KeepImages", c.config.KeepImages), err)
-	}
-
 	sort.Sort(byVersion(templates))
 	var deleted templateList
 	var kept templateList
-	if len(templates) > keepImages {
-		deleted = templates[:len(templates)-keepImages]
-		kept = templates[len(templates)-keepImages:]
+	extra := len(templates) - c.config.KeepImages
+	if extra > 0 {
+		deleted = templates[:extra]
+		kept = templates[extra:]
 	} else {
+		deleted = make(templateList, 0)
 		kept = templates
 	}
 	if newTemplate != nil {
 		kept = append(kept, newTemplate)
 	}
 
-	c.ui.Message(fmt.Sprintf("Next machines selected for deletion: %s", deleted.toString()))
-	c.ui.Message(fmt.Sprintf("Next machines will be kept: %s", kept.toString()))
+	c.ui.Message(fmt.Sprintf("Virtual machines selected for deletion: %s", deleted.toString()))
+	c.ui.Message(fmt.Sprintf("Virtual machines will be kept: %s", kept.toString()))
 
-	if !parseBool(c.config.DryRun, false) {
+	if !c.config.DryRun {
 		c.deleteTemplate(deleted)
 	}
-	return nil, false, false, nil
+	return nil, true, false, nil
 }
 
 func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
@@ -218,7 +216,7 @@ func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
 }
 
 func (c *Cleaner) deleteTemplate(list templateList) {
-	rplist, err := c.finder.ResourcePoolList(c.Ctx, "*")
+	pools, err := c.finder.ResourcePoolList(c.Ctx, "*")
 	if err != nil {
 		c.ui.Error(fmt.Sprintf("Unable to retrieve resource pools: %s", err))
 		return
@@ -230,15 +228,15 @@ func (c *Cleaner) deleteTemplate(list templateList) {
 
 		err := c.collector.RetrieveOne(c.Ctx, d.ref.Reference(), nil, vmInfo)
 		if err != nil {
-			c.ui.Error(fmt.Sprintf("During retrieving of information about vm %s, error occured %s, skip deletion", d.name, err))
+			c.ui.Error(fmt.Sprintf("Erorr occured during retrieving information about VM '%s', skiping deletion: %s", d.name, err))
 			continue
 		}
 
 		if vmInfo.Config.Template == true {
-			c.ui.Message(fmt.Sprintf("'%s' is template, try to conevert it to virtual machine", d.name))
+			c.ui.Message(fmt.Sprintf("'%s' is a template, trying to convert it to virtual machine", d.name))
 			host, err := d.ref.HostSystem(c.Ctx)
 			if err != nil {
-				c.ui.Error(fmt.Sprintf("During getting host of %s, error occurred, %s", d.name, err))
+				c.ui.Error(fmt.Sprintf("Error occured during retirieving host of '%s': %s", d.name, err))
 				continue
 			}
 
@@ -246,24 +244,24 @@ func (c *Cleaner) deleteTemplate(list templateList) {
 			err = c.collector.Retrieve(c.Ctx, []types.ManagedObjectReference{host.Reference()}, []string{"name"}, &hostSystem)
 
 			pool := &object.ResourcePool{}
-			for _, rp := range rplist {
+			for _, rp := range pools {
 				if matchHost(hostSystem.Name, rp.InventoryPath) {
 					pool = rp
-					c.ui.Message(fmt.Sprintf("Select resource pool %s for convertation before deletion", rp.InventoryPath))
+					c.ui.Message(fmt.Sprintf("Using resource pool '%s' for conversion", rp.InventoryPath))
 					break
 				}
 			}
 
-			c.ui.Message(fmt.Sprintf("Convertation info: pool '%s', host '%s'", pool.InventoryPath, hostSystem.Name))
+			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s', host is '%s'", pool.InventoryPath, hostSystem.Name))
 			err = d.ref.MarkAsVirtualMachine(c.Ctx, *pool, host)
 			if err != nil {
-				c.ui.Error(fmt.Sprintf("During converation of template %s, error occurred, %s", d.name, err))
+				c.ui.Error(fmt.Sprintf("Error occurred during template '%s' conversion: %s", d.name, err))
 				continue
 			}
 		}
 		_, err = d.ref.Destroy(c.Ctx)
 		if err != nil {
-			c.ui.Error(fmt.Sprintf("During deleting of %s, error occured, %s", d.name, err))
+			c.ui.Error(fmt.Sprintf("Error occurred during '%s' deletion: %s", d.name, err))
 		}
 	}
 }
@@ -274,6 +272,9 @@ func main() {
 		panic(err)
 	}
 
-	server.RegisterPostProcessor(new(Cleaner))
+	err = server.RegisterPostProcessor(new(Cleaner))
+	if err != nil {
+		panic(err)
+	}
 	server.Serve()
 }
