@@ -169,7 +169,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 	re := regexp.MustCompile(c.config.ImageNameRegex)
 	c.ui.Message(fmt.Sprintf("Using image name regexp: %s", re.String()))
 
-	items, err := c.finder.VirtualMachineList(c.Ctx, "*")
+	items, err := c.finder.VirtualMachineList(ctx, "*")
 	if err != nil {
 		c.ui.Error(fmt.Sprintf("Unable to retrieve virtual machines: %s", err))
 		return nil, true, false, err
@@ -206,7 +206,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 	c.ui.Message(fmt.Sprintf("Virtual machines will be kept: %s", kept.toString()))
 
 	if !c.config.DryRun {
-		c.deleteTemplate(deleted)
+		c.deleteTemplate(ctx, deleted)
 	}
 	return nil, true, false, nil
 }
@@ -215,8 +215,8 @@ func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
 	return nil
 }
 
-func (c *Cleaner) deleteTemplate(list templateList) {
-	pools, err := c.finder.ResourcePoolList(c.Ctx, "*")
+func (c *Cleaner) deleteTemplate(ctx context.Context, list templateList) {
+	pools, err := c.finder.ResourcePoolList(ctx, "*")
 	if err != nil {
 		c.ui.Error(fmt.Sprintf("Unable to retrieve resource pools: %s", err))
 		return
@@ -226,7 +226,7 @@ func (c *Cleaner) deleteTemplate(list templateList) {
 	for _, d := range list {
 		c.ui.Message(fmt.Sprintf("Deleting virtual machine '%s'", d.name))
 
-		err := c.collector.RetrieveOne(c.Ctx, d.ref.Reference(), nil, vmInfo)
+		err := c.collector.RetrieveOne(ctx, d.ref.Reference(), nil, vmInfo)
 		if err != nil {
 			c.ui.Error(fmt.Sprintf("Erorr occured during retrieving information about VM '%s', skiping deletion: %s", d.name, err))
 			continue
@@ -234,14 +234,14 @@ func (c *Cleaner) deleteTemplate(list templateList) {
 
 		if vmInfo.Config.Template == true {
 			c.ui.Message(fmt.Sprintf("'%s' is a template, trying to convert it to virtual machine", d.name))
-			host, err := d.ref.HostSystem(c.Ctx)
+			host, err := d.ref.HostSystem(ctx)
 			if err != nil {
 				c.ui.Error(fmt.Sprintf("Error occured during retirieving host of '%s': %s", d.name, err))
 				continue
 			}
 
 			hostSystem := mo.HostSystem{}
-			err = c.collector.Retrieve(c.Ctx, []types.ManagedObjectReference{host.Reference()}, []string{"name"}, &hostSystem)
+			err = c.collector.Retrieve(ctx, []types.ManagedObjectReference{host.Reference()}, []string{"name"}, &hostSystem)
 
 			pool := &object.ResourcePool{}
 			for _, rp := range pools {
@@ -253,13 +253,13 @@ func (c *Cleaner) deleteTemplate(list templateList) {
 			}
 
 			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s', host is '%s'", pool.InventoryPath, hostSystem.Name))
-			err = d.ref.MarkAsVirtualMachine(c.Ctx, *pool, host)
+			err = d.ref.MarkAsVirtualMachine(ctx, *pool, host)
 			if err != nil {
 				c.ui.Error(fmt.Sprintf("Error occurred during template '%s' conversion: %s", d.name, err))
 				continue
 			}
 		}
-		_, err = d.ref.Destroy(c.Ctx)
+		_, err = d.ref.Destroy(ctx)
 		if err != nil {
 			c.ui.Error(fmt.Sprintf("Error occurred during '%s' deletion: %s", d.name, err))
 		}
