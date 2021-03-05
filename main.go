@@ -243,13 +243,22 @@ func (c *Cleaner) deleteTemplate(ctx context.Context, list templateList) {
 			hostSystem := mo.HostSystem{}
 			err = c.collector.Retrieve(ctx, []types.ManagedObjectReference{host.Reference()}, []string{"name"}, &hostSystem)
 
-			pool := &object.ResourcePool{}
+			c.ui.Message(fmt.Sprintf("Template '%s' is registered on host '%s'", d.name, hostSystem.Name))
+
+			var pool *object.ResourcePool
 			for _, rp := range pools {
 				if matchHost(hostSystem.Name, rp.InventoryPath) {
 					pool = rp
 					c.ui.Message(fmt.Sprintf("Using resource pool '%s' for conversion", rp.InventoryPath))
 					break
 				}
+			}
+
+			if pool == nil {
+				var x resourcePools
+				x = pools
+				c.ui.Error(fmt.Sprintf("Cannot find relevant resource pool on host '%s' for conversion, available pools: %s", hostSystem.Name, x.toString()))
+				continue
 			}
 
 			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s', host is '%s'", pool.InventoryPath, hostSystem.Name))

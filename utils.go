@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/vmware/govmomi/object"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +27,21 @@ func (tl *templateList) toString() string {
 			output += t.name
 		} else {
 			output += t.name + ", "
+		}
+	}
+	output += "]"
+	return output
+}
+
+type resourcePools []*object.ResourcePool
+
+func (rp *resourcePools) toString() string {
+	output := "["
+	for i, t := range *rp {
+		if i == len(*rp)-1 {
+			output += t.InventoryPath
+		} else {
+			output += t.InventoryPath + ", "
 		}
 	}
 	output += "]"
