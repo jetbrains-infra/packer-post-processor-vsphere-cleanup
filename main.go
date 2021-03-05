@@ -261,8 +261,8 @@ func (c *Cleaner) deleteTemplate(ctx context.Context, list templateList) {
 				continue
 			}
 
-			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s', host is '%s'", pool.InventoryPath, hostSystem.Name))
-			err = d.ref.MarkAsVirtualMachine(ctx, *pool, host)
+			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s'", pool.InventoryPath))
+			err = d.ref.MarkAsVirtualMachine(ctx, *pool, nil)
 			if err != nil {
 				c.ui.Error(fmt.Sprintf("Error occurred during template '%s' conversion: %s", d.name, err))
 				continue
