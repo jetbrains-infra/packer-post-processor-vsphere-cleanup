@@ -250,21 +250,18 @@ func (c *Cleaner) deleteTemplate(ctx context.Context, list templateList) {
 				if matchHost(hostSystem.Name, rp.InventoryPath) {
 					pool = rp
 					c.ui.Message(fmt.Sprintf("Using resource pool '%s' for conversion", rp.InventoryPath))
-					break
+					if err := d.ref.MarkAsVirtualMachine(ctx, *pool, nil); err != nil {
+						c.ui.Error(fmt.Sprintf("Error occurred during template '%s' conversion: %s", d.name, err))
+						continue
+					} else {
+						break
+					}
 				}
 			}
-
 			if pool == nil {
 				var x resourcePools
 				x = pools
 				c.ui.Error(fmt.Sprintf("Cannot find relevant resource pool on host '%s' for conversion, available pools: %s", hostSystem.Name, x.toString()))
-				continue
-			}
-
-			c.ui.Message(fmt.Sprintf("Conversion details: pool is '%s'", pool.InventoryPath))
-			err = d.ref.MarkAsVirtualMachine(ctx, *pool, nil)
-			if err != nil {
-				c.ui.Error(fmt.Sprintf("Error occurred during template '%s' conversion: %s", d.name, err))
 				continue
 			}
 		}
