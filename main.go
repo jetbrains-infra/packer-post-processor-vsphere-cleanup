@@ -154,7 +154,7 @@ func (c *Cleaner) Init() error {
 	return nil
 }
 
-func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer.Artifact) (a packer.Artifact, keep bool, forceOverride bool, err error) {
+func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer.Artifact) (packer.Artifact, bool, bool, error) {
 	defer func() {
 		err := c.client.Logout(c.Ctx)
 		if err != nil {
@@ -172,7 +172,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 	items, err := c.finder.VirtualMachineList(ctx, "*")
 	if err != nil {
 		c.ui.Error(fmt.Sprintf("Unable to retrieve virtual machines: %s", err))
-		return nil, true, false, err
+		return artifact, true, true, err
 	}
 
 	var temp *template
@@ -208,7 +208,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 	if !c.config.DryRun {
 		c.deleteTemplate(ctx, deleted)
 	}
-	return nil, true, false, nil
+	return artifact, true, true, nil
 }
 
 func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
