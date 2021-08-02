@@ -1,13 +1,15 @@
+//go:generate packer-sdc mapstructure-to-hcl2 -type Config
+
 package main
 
 import (
 	"context"
 	"fmt"
 	"github.com/hashicorp/hcl/v2/hcldec"
-	"github.com/hashicorp/packer/common"
-	"github.com/hashicorp/packer/helper/config"
-	"github.com/hashicorp/packer/packer"
-	"github.com/hashicorp/packer/packer/plugin"
+	"github.com/hashicorp/packer-plugin-sdk/common"
+	"github.com/hashicorp/packer-plugin-sdk/packer"
+	"github.com/hashicorp/packer-plugin-sdk/plugin"
+	"github.com/hashicorp/packer-plugin-sdk/template/config"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/object"
@@ -212,7 +214,7 @@ func (c *Cleaner) PostProcess(ctx context.Context, ui packer.Ui, artifact packer
 }
 
 func (c *Cleaner) ConfigSpec() hcldec.ObjectSpec {
-	return nil
+	return c.config.FlatMapstructure().HCL2Spec()
 }
 
 func (c *Cleaner) deleteTemplate(ctx context.Context, list templateList) {
