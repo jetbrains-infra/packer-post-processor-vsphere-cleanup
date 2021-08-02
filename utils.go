@@ -5,7 +5,6 @@ import (
 	"github.com/vmware/govmomi/object"
 	"regexp"
 	"strconv"
-	"strings"
 )
 
 type template struct {
@@ -91,17 +90,4 @@ func matchHost(host string, rpPath string) bool {
 		return false
 	}
 	return hostMatchRegex.Match([]byte(rpPath))
-}
-
-func parseBool(r string, def bool) bool {
-	if r == "" {
-		return def
-	}
-
-	switch strings.ToLower(r) {
-	case "t", "y", "1", "T", "true":
-		return true
-	}
-
-	return false
 }
